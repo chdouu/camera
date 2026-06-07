@@ -143,6 +143,32 @@ class CoreIntegrationTests(unittest.TestCase):
     def test_camera_dependency_check_for_opencv(self):
         self.assertTrue(camera.camera_dependency_available("opencv"))
 
+    def test_picamera2_config_retries_without_framerate_for_uvc_camera(self):
+        class FakePicamera2:
+            def __init__(self):
+                self.create_calls = []
+                self.configure_calls = []
+
+            def create_video_configuration(self, **kwargs):
+                self.create_calls.append(kwargs)
+                return kwargs
+
+            def configure(self, config):
+                self.configure_calls.append(config)
+                if config.get("controls"):
+                    raise RuntimeError("Control FrameDurationLimits is not advertised by libcamera")
+
+        cfg = camera.Config()
+        fake_camera = FakePicamera2()
+
+        config = camera.configure_picamera2_video(fake_camera, cfg)
+
+        self.assertEqual(len(fake_camera.create_calls), 2)
+        self.assertEqual(fake_camera.create_calls[0]["controls"], {"FrameRate": cfg.fps})
+        self.assertNotIn("controls", fake_camera.create_calls[1])
+        self.assertNotIn("controls", config)
+        self.assertEqual(config["main"], {"format": "RGB888", "size": (cfg.image_width, cfg.image_height)})
+
     def test_tesseract_check_accepts_configured_executable(self):
         self.assertTrue(camera.tesseract_available(sys.executable))
 

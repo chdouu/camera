@@ -113,6 +113,8 @@ camera_source: opencv
 opencv_camera_index: 0
 ```
 
+USB UVC cameras can also appear through Picamera2/libcamera. If the camera does not advertise frame-rate controls, this program retries Picamera2 setup without forcing FPS; if that still fails, use `camera_source: opencv` for the USB camera.
+
 ## Output
 
 Speed records are written to:

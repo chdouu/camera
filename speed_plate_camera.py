@@ -552,16 +552,38 @@ class PiCameraFrames:
         self.camera.close()
 
 
+def create_picamera2_video_config(camera, cfg, include_framerate=True):
+    kwargs = {
+        "main": {"format": "RGB888", "size": (cfg.image_width, cfg.image_height)},
+    }
+    if include_framerate:
+        kwargs["controls"] = {"FrameRate": cfg.fps}
+    return camera.create_video_configuration(**kwargs)
+
+
+def configure_picamera2_video(camera, cfg):
+    config = create_picamera2_video_config(camera, cfg, include_framerate=True)
+    try:
+        camera.configure(config)
+        return config
+    except RuntimeError as exc:
+        message = str(exc).lower()
+        control_error = "not advertised by libcamera" in message or "framedurationlimits" in message
+        if not control_error:
+            raise
+        logging.warning("Picamera2 frame-rate control unavailable; retrying without controls: %s", exc)
+
+    config = create_picamera2_video_config(camera, cfg, include_framerate=False)
+    camera.configure(config)
+    return config
+
+
 class PiCamera2Frames:
     def __init__(self, cfg):
         from picamera2 import Picamera2
 
         self.camera = Picamera2()
-        config = self.camera.create_video_configuration(
-            main={"format": "RGB888", "size": (cfg.image_width, cfg.image_height)},
-            controls={"FrameRate": cfg.fps},
-        )
-        self.camera.configure(config)
+        configure_picamera2_video(self.camera, cfg)
         self.vflip = cfg.camera_vflip
         self.hflip = cfg.camera_hflip
         self.camera.start()
