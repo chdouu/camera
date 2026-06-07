@@ -85,6 +85,20 @@ Run a one-frame camera capture test:
 make capturetest
 ```
 
+Run a one-frame plate recognition test from the configured camera:
+
+```bash
+make platetest
+```
+
+Run plate recognition against an existing image:
+
+```bash
+./venv/bin/python speed_plate_camera.py platetest --config config.yaml --image /path/to/plate.jpg
+```
+
+`platetest` writes the annotated result to `preview.jpg`. It exits with code `0` when a valid plate is detected, `2` when the image/camera worked but no valid plate was detected, and `1` for setup or dependency failures.
+
 Start the service:
 
 ```bash

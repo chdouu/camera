@@ -3,7 +3,7 @@
 Integrated Raspberry Pi speed camera and license plate recognition.
 
 Usage:
-    speed_plate_camera.py [preview|display|selftest|capturetest] [--config=<file>]
+    speed_plate_camera.py [preview|display|selftest|capturetest|platetest] [--config=<file>] [--image=<file>]
 
 Options:
     -h --help       Show this screen.
@@ -42,7 +42,7 @@ SAVING = 2
 UNKNOWN = 0
 LEFT_TO_RIGHT = 1
 RIGHT_TO_LEFT = 2
-RUN_MODES = ("preview", "display", "selftest", "capturetest")
+RUN_MODES = ("preview", "display", "selftest", "capturetest", "platetest")
 
 
 class Config:
@@ -752,11 +752,14 @@ def parse_command_line():
     parser = argparse.ArgumentParser(description="Integrated Raspberry Pi speed and plate camera")
     parser.add_argument("mode", nargs="?", choices=RUN_MODES, help="run mode")
     parser.add_argument("--config", default="config.yaml", help="YAML config file")
+    parser.add_argument("--image", help="image file for platetest mode")
     args = parser.parse_args()
     config_file = Path(args.config)
     if not config_file.is_file():
         raise FileNotFoundError("config file does not exist: {}".format(config_file))
-    return args.mode, config_file
+    if args.image and args.mode != "platetest":
+        raise ValueError("--image is only supported with platetest mode")
+    return args.mode, config_file, Path(args.image) if args.image else None
 
 
 def setup_frame_source(cfg):
@@ -857,6 +860,53 @@ def run_capturetest(config_file):
     return 1
 
 
+def run_platetest(config_file, image_file=None):
+    setup_logging(Path(config_file).resolve().parent)
+    logging.info("Running platetest")
+    cfg = Config.load(config_file)
+    recognizer = PlateRecognizer(cfg)
+    if not recognizer.enabled:
+        logging.error("PLATETEST FAIL: plate recognition is disabled or unavailable")
+        return 1
+
+    image = None
+    if image_file:
+        image = cv2.imread(str(image_file))
+        if image is None:
+            logging.error("PLATETEST FAIL: could not read image %s", image_file)
+            return 1
+        logging.info("PLATETEST: loaded image %s shape=%s", image_file, image.shape)
+    else:
+        frame_source = setup_frame_source(cfg)
+        try:
+            for frame in frame_source.frames():
+                image = frame
+                logging.info("PLATETEST: captured frame shape=%s", image.shape)
+                break
+        except Exception as exc:
+            logging.error("PLATETEST FAIL: %s", exc)
+            return 1
+        finally:
+            frame_source.close()
+
+    if image is None:
+        logging.error("PLATETEST FAIL: no image available")
+        return 1
+
+    recognizer.scan_interval = 0
+    recognizer.ocr_interval = 0
+    plate = recognizer.process_frame(image) or recognizer.recent_plate()
+    preview_image = annotate_image(image, datetime.now(timezone.utc), plate=plate or "")
+    cv2.imwrite(str(cfg.preview_file), preview_image)
+
+    if plate:
+        logging.info("PLATETEST OK: detected plate=%s wrote %s", plate, cfg.preview_file)
+        return 0
+
+    logging.warning("PLATETEST OK: no valid plate detected, wrote %s", cfg.preview_file)
+    return 2
+
+
 def camera_dependency_available(camera_source):
     if camera_source == "opencv":
         return True
@@ -927,11 +977,13 @@ def has_onnx_backend(model_path):
 
 def main():
     global cfg
-    mode, config_file = parse_command_line()
+    mode, config_file, image_file = parse_command_line()
     if mode == "selftest":
         raise SystemExit(run_selftest(config_file))
     if mode == "capturetest":
         raise SystemExit(run_capturetest(config_file))
+    if mode == "platetest":
+        raise SystemExit(run_platetest(config_file, image_file))
 
     setup_logging(config_file.resolve().parent)
     logging.info("Initializing")

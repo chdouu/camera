@@ -37,6 +37,9 @@ selftest:
 capturetest:
 	$(PYTHON) "$(INSTALL_DIR)/speed_plate_camera.py" capturetest --config "$(INSTALL_DIR)/config.yaml"
 
+platetest:
+	$(PYTHON) "$(INSTALL_DIR)/speed_plate_camera.py" platetest --config "$(INSTALL_DIR)/config.yaml"; status=$$?; test $$status -eq 0 -o $$status -eq 2
+
 test:
 	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -m unittest discover -s "$(INSTALL_DIR)/tests"
 

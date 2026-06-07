@@ -31,6 +31,7 @@ class CoreIntegrationTests(unittest.TestCase):
 
     def test_cli_help_mentions_capturetest(self):
         self.assertIn("capturetest", camera.RUN_MODES)
+        self.assertIn("platetest", camera.RUN_MODES)
 
     def test_config_relative_paths_resolve_from_config_directory(self):
         previous_cwd = os.getcwd()
@@ -201,6 +202,7 @@ class CoreIntegrationTests(unittest.TestCase):
         self.assertIn('"$(INSTALL_DIR)/speed_plate_camera.py" preview --config "$(INSTALL_DIR)/config.yaml"', makefile)
         self.assertIn('"$(INSTALL_DIR)/speed_plate_camera.py" selftest --config "$(INSTALL_DIR)/config.yaml"', makefile)
         self.assertIn('"$(INSTALL_DIR)/speed_plate_camera.py" capturetest --config "$(INSTALL_DIR)/config.yaml"', makefile)
+        self.assertIn('"$(INSTALL_DIR)/speed_plate_camera.py" platetest --config "$(INSTALL_DIR)/config.yaml"', makefile)
         self.assertIn('unittest discover -s "$(INSTALL_DIR)/tests"', makefile)
         self.assertIn('rm -rf "$(INSTALL_DIR)/logs"', makefile)
         self.assertIn('rm -rf "$(INSTALL_DIR)/venv"', makefile)
