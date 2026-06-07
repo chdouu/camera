@@ -1,0 +1,46 @@
+# Camera source: "picamera2" for current Raspberry Pi OS, "picamera" for legacy PiCamera, "opencv" for USB camera.
+camera_source: picamera2
+opencv_camera_index: 0
+camera_vflip: false
+camera_hflip: false
+
+# Location to monitor for speed, in image coordinates.
+upper_left_x: 0
+upper_left_y: 0
+lower_right_x: 1024
+lower_right_y: 576
+
+# Distance-to-road in feet.
+l2r_distance: 75
+r2l_distance: 85
+
+# Speed recording thresholds.
+min_speed: 10
+min_speed_alert: 30
+min_area: 2000
+min_confidence: 70
+min_confidence_alert: 70
+min_distance: 0.4
+
+# Camera geometry.
+fov: 62.2
+fps: 30
+image_width: 1024
+image_height: 576
+image_min_area: 500
+
+# Plate recognition.
+plate_enabled: true
+plate_model: models/yolov8n-license_plate.onnx
+plate_country: TW
+plate_confidence: 0.25
+plate_iou: 0.7
+plate_scan_interval: 0.5
+plate_ocr_interval: 3.0
+plate_recent_seconds: 8.0
+tesseract_cmd: ""
+
+# Communication. Leave empty to disable Telegram.
+telegram_token: ""
+telegram_chat_id: ""
+telegram_frequency: 6

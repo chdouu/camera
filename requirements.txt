@@ -1,0 +1,2 @@
+pytesseract
+python-telegram-bot<20

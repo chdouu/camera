@@ -1,0 +1,15 @@
+[Unit]
+Description=Integrated Speed and Plate Camera
+After=network.target
+
+[Service]
+User=@SERVICE_USER@
+Restart=always
+WorkingDirectory=@INSTALL_DIR@
+ExecStart=@INSTALL_DIR@/venv/bin/python @INSTALL_DIR@/speed_plate_camera.py --config @INSTALL_DIR@/config.yaml
+KillMode=process
+ExecStop=/bin/kill -HUP $MAINPID
+StartLimitIntervalSec=10
+
+[Install]
+WantedBy=multi-user.target
