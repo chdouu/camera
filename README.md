@@ -4,7 +4,7 @@ This folder combines the existing Raspberry Pi speed camera and license plate re
 
 The important change is that only one camera loop is used. Every frame comes from the Raspberry Pi camera or USB camera, then:
 
-1. The speed-camera motion tracker estimates direction and MPH.
+1. The speed-camera motion tracker estimates direction and speed in m/s.
 2. The plate recognizer periodically runs the ONNX license plate model and Tesseract OCR on the same frame.
 3. Recorded events are written to `logs/recorded_speed.csv` with a `plate` column.
 4. Alert GIF/JSON files include the latest plate seen near the speed event.
@@ -144,6 +144,7 @@ timestamp,speed,speed_deviation,area,area_deviation,frames,seconds,direction,pla
 ```
 
 If no plate is confidently recognized near an event, the `plate` field is empty and the speed event is still recorded.
+The `speed` and `speed_deviation` values are recorded in m/s.
 
 ## Notes
 

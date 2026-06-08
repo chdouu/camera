@@ -14,9 +14,9 @@ lower_right_y: 576
 l2r_distance: 75
 r2l_distance: 85
 
-# Speed recording thresholds.
-min_speed: 10
-min_speed_alert: 30
+# Speed recording thresholds in m/s.
+min_speed: 4.5
+min_speed_alert: 13.4
 min_area: 2000
 min_confidence: 70
 min_confidence_alert: 70

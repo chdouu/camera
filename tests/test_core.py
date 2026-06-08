@@ -104,6 +104,11 @@ class CoreIntegrationTests(unittest.TestCase):
         self.assertFalse(camera.should_update_tracking(camera.WAITING))
         self.assertFalse(camera.should_update_tracking(camera.SAVING))
 
+    def test_speed_formula_returns_meters_per_second(self):
+        self.assertAlmostEqual(camera.get_speed(10, 1, 1), 3.048)
+        self.assertAlmostEqual(camera.event_speed_mps({"mph": 10}), 4.4704)
+        self.assertAlmostEqual(camera.event_speed_mps({"mps": 4.5, "mph": 10}), 4.5)
+
     def test_onnx_backend_check_runs_blank_inference(self):
         self.assertTrue(camera.has_onnx_backend(Path("models/yolov8n-license_plate.onnx")))
 
@@ -170,6 +175,12 @@ class CoreIntegrationTests(unittest.TestCase):
         self.assertNotIn("controls", config)
         self.assertEqual(config["main"], {"format": "RGB888", "size": (cfg.image_width, cfg.image_height)})
 
+    def test_camera_busy_error_is_described(self):
+        message = camera.describe_camera_error(RuntimeError("Failed to acquire camera: Device or resource busy"))
+
+        self.assertIn("camera is busy", message)
+        self.assertIn("Stop the service/display process", message)
+
     def test_tesseract_check_accepts_configured_executable(self):
         self.assertTrue(camera.tesseract_available(sys.executable))
 
@@ -228,11 +239,11 @@ class CoreIntegrationTests(unittest.TestCase):
                     confidence=95,
                     image=None,
                     timestamp=datetime(2026, 5, 27, tzinfo=timezone.utc),
-                    mean_speed=42,
+                    mean_speed=12.3,
                     avg_area=2500,
-                    sd_speed=2,
+                    sd_speed=0.7,
                     sd_area=100,
-                    speeds=np.array([40.0, 42.0, 44.0]),
+                    speeds=np.array([11.8, 12.3, 12.8]),
                     secs=1.25,
                     direction=camera.LEFT_TO_RIGHT,
                     events=[],
@@ -243,6 +254,7 @@ class CoreIntegrationTests(unittest.TestCase):
                 with open("logs/recorded_speed.csv", newline="", encoding="utf-8") as csv_file:
                     rows = list(csv.reader(csv_file))
                 self.assertEqual(rows[0], camera.Recorder.record_headers.split(","))
+                self.assertEqual(rows[1][1:3], ["12.3", "0.7"])
                 self.assertEqual(rows[1][-2:], ["LTR", "CJ 12 XYZ"])
             finally:
                 os.chdir(previous_cwd)

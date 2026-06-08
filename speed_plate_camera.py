@@ -35,6 +35,8 @@ except ImportError:
 MIN_SAVE_BUFFER = 2
 THRESHOLD = 25
 BLURSIZE = (15, 15)
+FT_PER_SECOND_TO_MPS = 0.3048
+MPH_TO_MPS = 0.44704
 
 WAITING = 0
 TRACKING = 1
@@ -62,8 +64,8 @@ class Config:
     camera_vflip = False
     camera_hflip = False
     min_distance = 0.4
-    min_speed = 10
-    min_speed_alert = 30
+    min_speed = 4.5
+    min_speed_alert = 13.4
     min_area = 2000
     min_confidence = 70
     min_confidence_alert = 90
@@ -469,9 +471,9 @@ class Recorder:
         if self.bot:
             self.bot.send_animation(chat_id=self.telegram_chat_id, animation=open(filename, "rb"), caption=text)
 
-    def send_animation(self, timestamp, events, confidence, mph, plate):
-        folder = self.logs_dir / "{}-{:02.0f}mph-{:.0f}".format(
-            timestamp.strftime("%Y-%m-%d_%H:%M:%S.%f"), mph, confidence
+    def send_animation(self, timestamp, events, confidence, mps, plate):
+        folder = self.logs_dir / "{}-{:.1f}mps-{:.0f}".format(
+            timestamp.strftime("%Y-%m-%d_%H:%M:%S.%f"), mps, confidence
         )
         gif_file = folder.with_suffix(".gif")
         json_file = folder.with_suffix(".json")
@@ -482,7 +484,7 @@ class Recorder:
             image = annotate_image(
                 event["image"],
                 event["ts"],
-                mph=event["mph"],
+                mps=event_speed_mps(event),
                 confidence=confidence,
                 x=event["x"],
                 y=event["y"],
@@ -504,7 +506,7 @@ class Recorder:
         process.wait()
         shutil.rmtree(folder, ignore_errors=True)
 
-        caption = "{:.0f} mph @ {:.0f}%".format(mph, confidence)
+        caption = "{:.1f} m/s @ {:.0f}%".format(mps, confidence)
         if plate:
             caption = "{} plate {}".format(caption, plate)
         self.send_gif(filename=str(gif_file), text=caption)
@@ -513,7 +515,7 @@ class Recorder:
         if confidence < self.min_confidence or mean_speed < self.min_speed or avg_area < self.min_area:
             return False
 
-        self.write_csv("{},{:.0f},{:.0f},{:.0f},{:.0f},{:d},{:.2f},{:s},{}".format(
+        self.write_csv("{},{:.1f},{:.1f},{:.0f},{:.0f},{:d},{:.2f},{:s},{}".format(
             timestamp.timestamp(),
             mean_speed,
             sd_speed,
@@ -648,8 +650,14 @@ def normalize_dnn_outputs(outputs):
 
 def get_speed(pixels, ftperpixel, secs):
     if secs > 0.0:
-        return ((pixels * ftperpixel) / secs) * 0.681818
+        return ((pixels * ftperpixel) / secs) * FT_PER_SECOND_TO_MPS
     return 0.0
+
+
+def event_speed_mps(event):
+    if "mps" in event:
+        return event["mps"]
+    return event.get("mph", 0) * MPH_TO_MPS
 
 
 def get_pixel_width(fov, distance, image_width):
@@ -693,7 +701,7 @@ def should_update_tracking(state):
     return state == TRACKING
 
 
-def annotate_image(image, timestamp, mph=0, confidence=0, h=0, w=0, x=0, y=0, plate=""):
+def annotate_image(image, timestamp, mps=0, confidence=0, h=0, w=0, x=0, y=0, plate=""):
     color_green = (0, 255, 0)
     color_red = (0, 0, 255)
 
@@ -702,8 +710,8 @@ def annotate_image(image, timestamp, mph=0, confidence=0, h=0, w=0, x=0, y=0, pl
     cv2.putText(image, timestamp.strftime("%d %B %Y %H:%M:%S.%f"),
                 (10, image.shape[0] - 10), cv2.FONT_HERSHEY_SIMPLEX, 1, color_red, 2)
 
-    if mph > 0:
-        msg = "{:.0f} mph".format(mph)
+    if mps > 0:
+        msg = "{:.1f} m/s".format(mps)
         size, _ = cv2.getTextSize(msg, cv2.FONT_HERSHEY_SIMPLEX, 2, 3)
         cntr_x = int((cfg.image_width - size[0]) / 2)
         cv2.putText(image, msg, (cntr_x, int(cfg.image_height * 0.2)), cv2.FONT_HERSHEY_SIMPLEX, 2.0, color_red, 3)
@@ -731,8 +739,8 @@ def annotate_image(image, timestamp, mph=0, confidence=0, h=0, w=0, x=0, y=0, pl
     return image
 
 
-def show_detection_frame(image, timestamp, mph=0, h=0, w=0, x=0, y=0, plate=""):
-    preview_image = annotate_image(image, timestamp, mph=mph, h=h, w=w, x=x, y=y, plate=plate)
+def show_detection_frame(image, timestamp, mps=0, h=0, w=0, x=0, y=0, plate=""):
+    preview_image = annotate_image(image, timestamp, mps=mps, h=h, w=w, x=x, y=y, plate=plate)
     cv2.imshow("Speed Plate Camera", preview_image)
     key = cv2.waitKey(1) & 0xFF
     return key not in (ord("q"), 27)
@@ -842,8 +850,9 @@ def run_capturetest(config_file):
     setup_logging(Path(config_file).resolve().parent)
     logging.info("Running capturetest")
     cfg = Config.load(config_file)
-    frame_source = setup_frame_source(cfg)
+    frame_source = None
     try:
+        frame_source = setup_frame_source(cfg)
         for image in frame_source.frames():
             timestamp = datetime.now(timezone.utc)
             preview_image = annotate_image(image, timestamp)
@@ -851,10 +860,11 @@ def run_capturetest(config_file):
             logging.info("CAPTURETEST OK: wrote %s shape=%s", cfg.preview_file, image.shape)
             return 0
     except Exception as exc:
-        logging.error("CAPTURETEST FAIL: %s", exc)
+        logging.error("CAPTURETEST FAIL: %s", describe_camera_error(exc))
         return 1
     finally:
-        frame_source.close()
+        if frame_source is not None:
+            frame_source.close()
 
     logging.error("CAPTURETEST FAIL: camera produced no frames")
     return 1
@@ -877,17 +887,19 @@ def run_platetest(config_file, image_file=None):
             return 1
         logging.info("PLATETEST: loaded image %s shape=%s", image_file, image.shape)
     else:
-        frame_source = setup_frame_source(cfg)
+        frame_source = None
         try:
+            frame_source = setup_frame_source(cfg)
             for frame in frame_source.frames():
                 image = frame
                 logging.info("PLATETEST: captured frame shape=%s", image.shape)
                 break
         except Exception as exc:
-            logging.error("PLATETEST FAIL: %s", exc)
+            logging.error("PLATETEST FAIL: %s", describe_camera_error(exc))
             return 1
         finally:
-            frame_source.close()
+            if frame_source is not None:
+                frame_source.close()
 
     if image is None:
         logging.error("PLATETEST FAIL: no image available")
@@ -905,6 +917,14 @@ def run_platetest(config_file, image_file=None):
 
     logging.warning("PLATETEST OK: no valid plate detected, wrote %s", cfg.preview_file)
     return 2
+
+
+def describe_camera_error(exc):
+    message = str(exc)
+    lower_message = message.lower()
+    if "resource busy" in lower_message or "pipeline handler in use" in lower_message:
+        return "{}; camera is busy. Stop the service/display process before running this test.".format(message)
+    return message
 
 
 def camera_dependency_available(camera_source):
@@ -1058,7 +1078,7 @@ def main():
             frame_delta = cv2.absdiff(gray, cv2.convertScaleAbs(base_image))
             thresh = cv2.threshold(frame_delta, THRESHOLD, 255, cv2.THRESH_BINARY)[1]
             motion_found, x, y, w, h, biggest_area = detect_motion(thresh, cfg.image_min_area)
-            display_mph = 0
+            display_mps = 0
 
             if motion_found:
                 if state == WAITING:
@@ -1075,7 +1095,7 @@ def main():
                     car_gap = secs_diff(initial_time, cap_time)
                     logging.info("Tracking")
                     logging.info("Initial Data: x=%.0f w=%.0f area=%.0f gap=%s", initial_x, initial_w, biggest_area, car_gap)
-                    logging.info(" x-?     Secs      MPH  x-pos width area dir plate")
+                    logging.info(" x-?     Secs      m/s  x-pos width area dir plate")
                     if car_gap < cfg.min_distance:
                         state = WAITING
                         base_image = None
@@ -1094,20 +1114,20 @@ def main():
                         continue
 
                     abs_chg = 0
-                    mph = 0
+                    mps = 0
                     distance = 0
                     if x >= last_x:
                         direction = LEFT_TO_RIGHT
                         distance = cfg.l2r_distance
                         abs_chg = (x + w) - (initial_x + initial_w)
-                        mph = get_speed(abs_chg, l2r_ft_per_pixel, secs)
+                        mps = get_speed(abs_chg, l2r_ft_per_pixel, secs)
                     else:
                         direction = RIGHT_TO_LEFT
                         distance = cfg.r2l_distance
                         abs_chg = initial_x - x
-                        mph = get_speed(abs_chg, r2l_ft_per_pixel, secs)
+                        mps = get_speed(abs_chg, r2l_ft_per_pixel, secs)
 
-                    speeds = np.append(speeds, mph)
+                    speeds = np.append(speeds, mps)
                     areas = np.append(areas, biggest_area)
                     events.append({
                         "image": image.copy(),
@@ -1116,7 +1136,7 @@ def main():
                         "y": y,
                         "w": w,
                         "h": h,
-                        "mph": mph,
+                        "mps": mps,
                         "fov": cfg.fov,
                         "image_width": cfg.image_width,
                         "distance": distance,
@@ -1127,7 +1147,7 @@ def main():
                         "plate": current_plate,
                     })
 
-                    if mph <= 0:
+                    if mps <= 0:
                         logging.info("negative speed - stopping tracking")
                         if direction == LEFT_TO_RIGHT:
                             direction = RIGHT_TO_LEFT
@@ -1136,16 +1156,16 @@ def main():
                             direction = LEFT_TO_RIGHT
                             x = cfg.monitored_width + MIN_SAVE_BUFFER
 
-                    logging.info("%4d  %7.2f  %7.0f   %4d  %4d %4d %s %s",
-                                 abs_chg, secs, mph, x, w, biggest_area, str_direction(direction), current_plate)
-                    display_mph = mph
+                    logging.info("%4d  %7.2f  %7.1f   %4d  %4d %4d %s %s",
+                                 abs_chg, secs, mps, x, w, biggest_area, str_direction(direction), current_plate)
+                    display_mps = mps
 
                     if ((x <= MIN_SAVE_BUFFER) and direction == RIGHT_TO_LEFT) or (
                         (x + w >= cfg.monitored_width - MIN_SAVE_BUFFER) and direction == LEFT_TO_RIGHT
                     ):
                         mean_speed, avg_area, sd_speed, sd_area, confidence = summarize_event(speeds, areas)
                         logging.info("Determined area:   avg=%4.0f deviation=%4.0f frames=%d", avg_area, sd_area, len(areas))
-                        logging.info("Determined speed: mean=%4.0f deviation=%4.0f frames=%d", mean_speed, sd_speed, len(speeds))
+                        logging.info("Determined speed: mean=%4.1f deviation=%4.1f frames=%d", mean_speed, sd_speed, len(speeds))
                         logging.info("Overall Confidence Level %.0f%%", confidence)
 
                         final_plate = newest_event_plate(events) or plate_recognizer.recent_plate()
@@ -1188,7 +1208,7 @@ def main():
                 cv2.accumulateWeighted(gray, base_image, 0.25)
 
             if mode == "display" and not show_detection_frame(
-                image, timestamp, mph=display_mph, h=h, w=w, x=x, y=y, plate=current_plate
+                image, timestamp, mps=display_mps, h=h, w=w, x=x, y=y, plate=current_plate
             ):
                 return
     finally:
@@ -1230,7 +1250,7 @@ def send_periodic_stats(recorder, stats_l2r, stats_r2l):
     l2r_mean = np.mean(stats_l2r) if len(stats_l2r) > 0 else 0
     r2l_mean = np.mean(stats_r2l) if len(stats_r2l) > 0 else 0
     recorder.send_message(
-        "{:.0f} cars in the past period\nL2R {:.0f}% at {:.0f} speed\nR2L {:.0f}% at {:.0f} speed".format(
+        "{:.0f} cars in the past period\nL2R {:.0f}% at {:.1f} m/s\nR2L {:.0f}% at {:.1f} m/s".format(
             total, l2r_perc, l2r_mean, r2l_perc, r2l_mean
         )
     )
